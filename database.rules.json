@@ -10,27 +10,25 @@
           ".validate": "newData.isString()"
         },
         "status": {
-          ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|voting|guess|results)$/)"
+          ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|results)$/)"
         },
         "players": {
           "$uid": {
             ".write": "auth != null && auth.uid === $uid",
             ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 16",
-            "online": { ".validate": "newData.isBoolean()" },
-            "joinedAt": { ".validate": "newData.isNumber()" },
-            "name": { ".validate": true },
-            "$other": { ".validate": false }
+            "online": {
+              ".validate": "newData.isBoolean()"
+            },
+            "joinedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "name": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           }
-        },
-        "votes": {
-          "$uid": {
-            ".write": "auth != null && auth.uid === $uid",
-            ".validate": "newData.isString() && newData.val() !== $uid && root.child('rooms/' + $code + '/status').val() === 'voting' && root.child('rooms/' + $code + '/round/roster/' + $uid).exists() && root.child('rooms/' + $code + '/round/roster/' + newData.val()).exists()"
-          }
-        },
-        "guessPick": {
-          ".write": "auth != null && root.child('rooms/' + $code + '/status').val() === 'guess' && root.child('rooms/' + $code + '/guess/by').val() === auth.uid",
-          ".validate": "newData.isString() && newData.val().length <= 60"
         }
       }
     },

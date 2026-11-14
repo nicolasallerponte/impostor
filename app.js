@@ -3,10 +3,10 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js?v=4";
+import { firebaseConfig } from "./config.js?v=5";
 import {
-  BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, decoys, isLiga,
-} from "./players.js?v=4";
+  BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, isLiga,
+} from "./players.js?v=5";
 
 window.__booted = true;
 try { sessionStorage.removeItem("imp.repaired"); } catch {}
@@ -32,7 +32,6 @@ const S = {
   secret: null,
   reveal: false,
   busy: false,
-  finishing: false,
   dealing: false,
   connected: false,
   fatal: "",
@@ -213,11 +212,10 @@ async function leaveRoom() {
       await remove(ref(db, `rooms/${code}`));
     } else {
       const next = others.find((id) => r.players[id].online !== false) || others[0];
-      await update(ref(db, `rooms/${code}`), { host: next, [`players/${uid}`]: null, [`votes/${uid}`]: null });
+      await update(ref(db, `rooms/${code}`), { host: next, [`players/${uid}`]: null });
     }
   } else {
     await update(ref(db, `rooms/${code}`), { [`players/${uid}`]: null });
-    await remove(ref(db, `rooms/${code}/votes/${uid}`)).catch(() => {});
   }
   exitLocal();
 }
@@ -275,42 +273,17 @@ async function startRound() {
     [`rooms/${code}/status`]: "playing",
     [`rooms/${code}/count`]: n,
     [`rooms/${code}/lastActive`]: serverTimestamp(),
-    [`rooms/${code}/votes`]: null,
     [`rooms/${code}/result`]: null,
-    [`rooms/${code}/guess`]: null,
-    [`rooms/${code}/guessPick`]: null,
     [`rooms/${code}/round`]: { n, roster, order, k },
   });
 }
 
-function tallyVotes(r) {
-  const roster = r.round?.roster || {};
-  const tally = {};
-  Object.keys(roster).forEach((id) => (tally[id] = 0));
-  Object.entries(r.votes || {}).forEach(([voter, target]) => {
-    if (roster[voter] && target in tally && voter !== target) tally[target]++;
-  });
-  const max = Math.max(0, ...Object.values(tally));
-  const tops = Object.keys(tally).filter((id) => max > 0 && tally[id] === max);
-  return { tally, top: tops.length === 1 ? tops[0] : null, tied: tops.length > 1 };
-}
-
-/** Lo que el anfitrión hace solo, sin que nadie pulse nada. */
+/** Lo que el anfitrión hace solo: dar carta a quien vuelve (o entra tarde) con la ronda empezada. */
 function hostDuties() {
   const r = S.room;
-  if (!isHost() || S.finishing) return;
-  if ((r.status === "playing" || r.status === "voting") && r.round?.roster) {
-    // Quien vuelve a la app (o entra tarde) con la ronda empezada recibe carta de futbolista.
-    const missing = onlineIds().filter((id) => !r.round.roster[id]);
-    if (missing.length) { dealIn(missing); return; }
-  }
-  if (r.status === "voting") {
-    const roster = Object.keys(r.round?.roster || {});
-    const active = roster.filter((id) => r.players?.[id]?.name && r.players[id].online !== false);
-    if (active.length && active.every((id) => r.votes?.[id])) closeVoting();
-  } else if (r.status === "guess" && r.guessPick) {
-    finish(r.guessPick);
-  }
+  if (!isHost() || r.status !== "playing" || !r.round?.roster) return;
+  const missing = onlineIds().filter((id) => !r.round.roster[id]);
+  if (missing.length) dealIn(missing);
 }
 
 async function dealIn(ids) {
@@ -333,64 +306,14 @@ async function dealIn(ids) {
   finally { S.dealing = false; }
 }
 
-async function closeVoting() {
-  if (S.finishing) return;
-  S.finishing = true;
-  try {
-    const r = S.room, code = S.code;
-    const { top } = tallyVotes(r);
-    const hd = (await get(ref(db, `hostdata/${code}`))).val() || { impostors: [], player: "?" };
-    if (top && arr(hd.impostors).includes(top) && BY_NAME.has(hd.player)) {
-      // Pillado: última oportunidad para adivinar el futbolista.
-      const options = shuffle([hd.player, ...decoys(BY_NAME.get(hd.player), 5)]);
-      await update(ref(db, `rooms/${code}`), { status: "guess", guess: { by: top, options }, guessPick: null });
-    } else {
-      S.finishing = false;
-      await finish(null, hd);
-    }
-  } catch (e) { console.error(e); toast(errMsg(e)); }
-  finally { S.finishing = false; }
-}
-
-async function finish(guessPick, hdIn) {
-  if (S.finishing && !hdIn) return;
-  S.finishing = true;
-  try {
-    const r = S.room, code = S.code;
-    const hd = hdIn || (await get(ref(db, `hostdata/${code}`))).val() || { impostors: [], player: "?" };
-    const roster = r.round?.roster || {};
-    const imps = arr(hd.impostors);
-    const { tally, top, tied } = tallyVotes(r);
-    const caught = !!top && imps.includes(top);
-    const guessOk = caught && guessPick === hd.player;
-
-    // Puntos: +1 a quien vota a un impostor · +2 al impostor que escapa o que adivina el futbolista.
-    const delta = {};
-    Object.keys(roster).forEach((id) => (delta[id] = 0));
-    Object.entries(r.votes || {}).forEach(([voter, target]) => {
-      if (roster[voter] && !imps.includes(voter) && imps.includes(target)) delta[voter] += 1;
-    });
-    imps.forEach((id) => { if (id in delta && (id !== top || guessOk)) delta[id] += 2; });
-
-    const winner = !caught ? "imp" : guessOk ? "steal" : "crew";
-    const upd = {
-      status: "results",
-      guess: null,
-      lastActive: serverTimestamp(),
-      result: {
-        tally, top, tied, caught, winner, delta,
-        votes: r.votes || {},
-        impostors: imps, player: hd.player,
-        guessPick: caught ? (guessPick || "") : "",
-      },
-    };
-    for (const [id, d] of Object.entries(delta)) {
-      const prev = r.scores?.[id]?.pts || 0;
-      upd[`scores/${id}`] = { name: roster[id], pts: prev + d };
-    }
-    await update(ref(db, `rooms/${code}`), upd);
-  } catch (e) { console.error(e); toast(errMsg(e)); }
-  finally { S.finishing = false; }
+async function revealRound() {
+  const code = S.code;
+  const hd = (await get(ref(db, `hostdata/${code}`))).val() || { impostors: [], player: "?" };
+  await update(ref(db, `rooms/${code}`), {
+    status: "results",
+    lastActive: serverTimestamp(),
+    result: { impostors: arr(hd.impostors), player: hd.player },
+  });
 }
 
 /* ---------- acciones ---------- */
@@ -406,31 +329,15 @@ const A = {
   kick: run(async (d) => {
     const p = S.room.players[d.v];
     if (!isHost() || !confirm(`¿Sacar a ${p?.name}?`)) return;
-    await update(ref(db, roomPath()), { [`players/${d.v}`]: null, [`votes/${d.v}`]: null });
+    await update(ref(db, roomPath()), { [`players/${d.v}`]: null });
   }),
   start: run(startRound),
-  vote: run(async (d) => {
-    if (S.room.votes?.[S.uid] === d.v) return;
-    await set(ref(db, roomPath(`votes/${S.uid}`)), d.v);
-    navigator.vibrate?.(20);
-  }),
-  tovote: run(async () => { await update(ref(db, roomPath()), { status: "voting", votes: null }); }),
-  close: run(closeVoting),
-  guess: run(async (d) => {
-    if (S.room.guess?.by !== S.uid) return;
-    if (!confirm(`¿Seguro que era ${d.v}?`)) return;
-    await set(ref(db, roomPath("guessPick")), d.v);
-  }),
-  skipguess: run(async () => {
-    if (!confirm("¿Dar por fallada la última oportunidad?")) return;
-    await finish("");
+  reveal: run(async () => {
+    if (!confirm("¿Revelar el futbolista y el impostor?")) return;
+    await revealRound();
   }),
   lobby: run(async () => {
-    await update(ref(db, roomPath()), { status: "lobby", round: null, votes: null, result: null, guess: null, guessPick: null });
-  }),
-  resetscores: run(async () => {
-    if (!confirm("¿Poner la clasificación a cero?")) return;
-    await set(ref(db, roomPath("scores")), null);
+    await update(ref(db, roomPath()), { status: "lobby", round: null, result: null });
   }),
   takehost: run(async () => { await set(ref(db, roomPath("host")), S.uid); }),
   flip: () => { S.reveal = !S.reveal; render(); },
@@ -492,7 +399,7 @@ function draw() {
   else if (!S.name) html = nameView();
   else if (!S.code) html = homeView();
   else if (!S.room) html = msgView(`Entrando en ${esc(S.code)}…`);
-  else html = ({ lobby: lobbyView, playing: playView, voting: voteView, guess: guessView, results: resultView }[S.room.status] || lobbyView)();
+  else html = ({ lobby: lobbyView, playing: playView, results: resultView }[S.room.status] || lobbyView)();
   if (html === lastHtml) return;
   lastHtml = html;
 
@@ -545,7 +452,7 @@ function homeView() {
       <li>Uno crea la sala y comparte el código.</li>
       <li>Todos reciben el mismo futbolista, menos el impostor.</li>
       <li>Por turnos, cada uno da una pista sin decir el nombre.</li>
-      <li>Votad quién está fingiendo. Si lo pilláis, aún puede ganar adivinando el futbolista.</li>
+      <li>Votad en voz alta quién está fingiendo y revelad.</li>
     </ol>
   </main>`;
 }
@@ -565,20 +472,6 @@ function hostBanner() {
 
 function roomBar(label) {
   return `<header class="bar"><button class="link" data-a="leave">← Salir</button><span class="muted small">${label}</span><button class="link code-tag" data-a="share">${esc(S.code)}</button></header>${hostBanner()}`;
-}
-
-function ranking(withReset = false) {
-  const sc = Object.entries(S.room.scores || {}).filter(([, s]) => s && s.name).sort((a, b) => b[1].pts - a[1].pts);
-  if (!sc.length) return "";
-  const delta = S.room.status === "results" ? S.room.result?.delta || {} : {};
-  return `<h2 class="sec">Puntos ${withReset && isHost() ? '<button class="link tiny" data-a="resetscores">reiniciar</button>' : ""}</h2>
-  <ul class="list">${sc.map(([id, s]) => `
-    <li>
-      <span class="pname">${esc(s.name)}${id === S.uid ? ' <span class="muted">(tú)</span>' : ""}</span>
-      ${delta[id] ? `<span class="muted small">+${delta[id]}</span>` : ""}
-      <span class="count">${s.pts}</span>
-    </li>`).join("")}
-  </ul>`;
 }
 
 function lobbyView() {
@@ -601,7 +494,6 @@ function lobbyView() {
       </li>`).join("")}
     </ul>
 
-    ${ranking(true)}
 
     <h2 class="sec">Ajustes ${isHost() ? "" : '<span class="muted small">· los cambia el anfitrión</span>'}</h2>
     <div class="setting"><span class="lbl">Futbolistas</span>${seg("pool", POOL_OPTS, st.pool)}</div>
@@ -662,60 +554,11 @@ function playView() {
     ${roomBar(`Ronda ${r.round.n}`)}
     ${card()}
     ${turnOrder()}
-    <p class="foot">Por turnos, cada uno dice una palabra sobre su futbolista. El impostor no lo sabe: tiene que pillarlo sobre la marcha.</p>
+    <p class="foot">Por turnos, cada uno dice una palabra sobre su futbolista. El impostor no lo sabe: tiene que pillarlo sobre la marcha. Al final, votad en voz alta.</p>
     <div class="sticky">
       ${isHost()
-        ? `<button class="btn primary big" data-a="tovote" ${S.busy ? "disabled" : ""}>Pasar a votación</button>`
-        : `<p class="wait">Cuando acabéis las rondas de pistas, el anfitrión abre la votación.</p>`}
-    </div>
-  </main>`;
-}
-
-function voteView() {
-  const r = S.room;
-  if (!inRound()) return waitingView("Votación en curso", isHostOnline() ? "Te están repartiendo carta…" : "Entrarás en la siguiente ronda.");
-  const roster = Object.entries(r.round.roster);
-  const votes = r.votes || {};
-  const mine = votes[S.uid];
-  const done = roster.filter(([id]) => votes[id]).length;
-  return `<main class="screen">
-    ${roomBar(`Ronda ${r.round.n}`)}
-    <h1 class="title">¿Quién es el impostor?</h1>
-    <p class="muted small">${done} de ${roster.length} han votado${mine ? " · puedes cambiar tu voto" : ""}</p>
-    <ul class="list votes">${roster.filter(([id]) => id !== S.uid).map(([id, name]) => `
-      <li><button class="vote ${mine === id ? "on" : ""}" data-a="vote" data-v="${id}">
-        <span class="pname">${esc(name)}</span>
-        ${votes[id] ? '<span class="muted small">ya votó</span>' : ""}
-      </button></li>`).join("")}
-    </ul>
-    <button class="btn ghost small center-self" data-a="flip">${S.reveal ? "Ocultar mi carta" : "Ver mi carta otra vez"}</button>
-    ${S.reveal ? card() : ""}
-    <div class="sticky">
-      ${isHost()
-        ? `<button class="btn primary big" data-a="close" ${S.busy ? "disabled" : ""}>Revelar${done < roster.length ? " ya" : ""}</button>`
-        : `<p class="wait">Se revela cuando vote todo el mundo.</p>`}
-    </div>
-  </main>`;
-}
-
-function guessView() {
-  const r = S.room, g = r.guess || {}, roster = r.round?.roster || {};
-  const me = g.by === S.uid;
-  const who = esc(roster[g.by] || "el impostor");
-  return `<main class="screen">
-    ${roomBar(`Ronda ${r.round?.n ?? ""}`)}
-    <div class="verdict win">${me ? "Te han pillado" : `¡Pillado ${who}!`}</div>
-    <p class="muted center-t">${me
-      ? "Si adivinas el futbolista, ganas la ronda igualmente."
-      : `Si adivina el futbolista, gana la ronda igualmente.`}</p>
-    <ul class="list votes">${arr(g.options).map((o) => `
-      <li><button class="vote ${r.guessPick === o ? "on" : ""}" data-a="guess" data-v="${esc(o)}" ${me && !S.busy ? "" : "disabled"}>
-        <span class="pname">${esc(o)}</span>
-      </button></li>`).join("")}
-    </ul>
-    <div class="sticky">
-      ${me ? '<p class="wait">Solo tienes un intento.</p>'
-        : `<p class="wait">${who} está eligiendo…</p>${isHost() ? '<button class="link center-self block" data-a="skipguess">Saltar</button>' : ""}`}
+        ? `<button class="btn primary big" data-a="reveal" ${S.busy ? "disabled" : ""}>Revelar</button>`
+        : `<p class="wait">Cuando hayáis votado, el anfitrión revela quién era.</p>`}
     </div>
   </main>`;
 }
@@ -724,36 +567,19 @@ function resultView() {
   const r = S.room, res = r.result || {}, roster = r.round?.roster || {};
   const imps = arr(res.impostors);
   const impNames = imps.map((id) => roster[id] || "?");
-  const tally = Object.entries(res.tally || {}).sort((a, b) => b[1] - a[1]);
-  const votersOf = (id) => Object.entries(res.votes || {}).filter(([, t]) => t === id).map(([v]) => roster[v]).filter(Boolean);
   const iWasImp = imps.includes(S.uid);
-  const winner = res.winner || (res.caught ? "crew" : "imp");
-  const [verdict, cls] = {
-    crew: [imps.length > 1 ? "¡Pillado uno!" : "¡Pillado!", "win"],
-    steal: ["Pillado, pero lo ha adivinado", "lose"],
-    imp: [res.tied ? "Empate. El impostor se escapa." : "Gana el impostor", "lose"],
-  }[winner];
   const p = BY_NAME.get(res.player);
   return `<main class="screen">
     ${roomBar(`Ronda ${r.round?.n ?? ""}`)}
-    <div class="verdict ${cls}">${verdict}</div>
+    <div class="grow"></div>
     <div class="reveal-box">
       <span class="card-k">El futbolista era</span>
       <span class="card-name">${esc(res.player)}</span>
       ${p ? `<span class="muted small">${p.clubs.map(esc).join(" · ")}</span>` : ""}
       <span class="card-k">${imps.length > 1 ? "Impostores" : "Impostor"}</span>
       <span class="imp-name">${impNames.map(esc).join(", ")}${iWasImp ? ' <span class="muted">(tú)</span>' : ""}</span>
-      ${res.caught ? `<span class="muted small">Dijo: ${esc(res.guessPick || "nada")}</span>` : ""}
     </div>
-    <h2 class="sec">Votos</h2>
-    <ul class="list">${tally.map(([id, n]) => `
-      <li>
-        <span class="pname">${esc(roster[id] || "?")}${votersOf(id).length ? `<span class="voters">${votersOf(id).map(esc).join(", ")}</span>` : ""}</span>
-        ${imps.includes(id) ? '<span class="tag red">impostor</span>' : ""}
-        <span class="count">${n}</span>
-      </li>`).join("")}
-    </ul>
-    ${ranking()}
+    <div class="grow"></div>
     <div class="sticky">
       ${isHost()
         ? `<div class="row"><button class="btn" data-a="lobby" ${S.busy ? "disabled" : ""}>Ajustes</button><button class="btn primary grow1" data-a="start" ${S.busy ? "disabled" : ""}>Otra ronda</button></div>`
