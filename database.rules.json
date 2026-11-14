@@ -1,0 +1,34 @@
+{
+  "rules": {
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid)",
+        "players": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "votes": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    },
+    "secrets": {
+      "$code": {
+        ".write": "auth != null && root.child('rooms/' + $code + '/host').val() === auth.uid",
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "hostdata": {
+      "$code": {
+        ".read": "auth != null && root.child('rooms/' + $code + '/host').val() === auth.uid",
+        ".write": "auth != null && root.child('rooms/' + $code + '/host').val() === auth.uid"
+      }
+    }
+  }
+}
