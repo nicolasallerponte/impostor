@@ -1,14 +1,15 @@
 // App: red primero (con límite de 2,5 s) para recibir siempre la última versión; si no hay red, caché.
 // Firebase SDK y Google Fonts: caché primero (sus URLs llevan versión y no cambian).
-const V = "impostor-v2";
+const V = "impostor-v3";
 const ASSETS = [
-  "./", "./index.html", "./styles.css", "./app.js", "./players.js", "./config.js",
+  "./", "./index.html", "./styles.css?v=3", "./app.js?v=3", "./players.js?v=3", "./config.js?v=3",
   "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
 ];
 const CDN = ["www.gstatic.com", "fonts.googleapis.com", "fonts.gstatic.com"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(V).then((c) => c.addAll(ASSETS)));
+  // cache: "reload" evita que la instalación copie archivos viejos de la caché HTTP del navegador.
+  e.waitUntil(caches.open(V).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" })))));
   self.skipWaiting();
 });
 
@@ -33,13 +34,14 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== location.origin) return;
 
   e.respondWith((async () => {
-    const net = fetch(req).then((res) => { put(req, res.clone()); return res; });
+    // "no-cache": revalida siempre con el servidor en vez de fiarse de la caché HTTP (GitHub Pages cachea 10 min).
+    const net = fetch(req.url, { cache: "no-cache", credentials: "same-origin" }).then((res) => { put(req, res.clone()); return res; });
     net.catch(() => {});
     const timeout = new Promise((r) => setTimeout(r, 2500));
     try {
       const res = await Promise.race([net, timeout]);
       if (res) return res;
-      const hit = await caches.match(req, { ignoreSearch: true });
+      const hit = await caches.match(req) || await caches.match(req, { ignoreSearch: true });
       return hit || await net;
     } catch {
       const hit = await caches.match(req, { ignoreSearch: true });
