@@ -3,10 +3,10 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js?v=5";
+import { firebaseConfig } from "./config.js?v=6";
 import {
   BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, isLiga,
-} from "./players.js?v=5";
+} from "./players.js?v=6";
 
 window.__booted = true;
 try { sessionStorage.removeItem("imp.repaired"); } catch {}
@@ -518,7 +518,7 @@ function card() {
   if (s.role === "impostor") {
     return `<button class="card open imp" data-a="flip">
       <span class="card-k">Eres el</span>
-      <span class="card-name">IMPOSTOR</span>
+      <span class="card-name">Impostor</span>
       <span class="card-sub">${s.hint ? `Pista: ${esc(s.hint)}` : "Sin pista. Disimula."}</span>
       ${s.k > 1 ? `<span class="card-sub dim">Hay ${s.k} impostores</span>` : ""}
       <span class="card-hide">Toca para ocultar</span>
