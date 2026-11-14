@@ -3,10 +3,10 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js?v=3";
+import { firebaseConfig } from "./config.js?v=4";
 import {
-  PLAYERS, BY_NAME, POS_LABEL, POS_SHORT, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, decoys, flag,
-} from "./players.js?v=3";
+  BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, decoys, isLiga,
+} from "./players.js?v=4";
 
 window.__booted = true;
 try { sessionStorage.removeItem("imp.repaired"); } catch {}
@@ -14,7 +14,7 @@ const $ = document.getElementById("app");
 const $toast = document.getElementById("toast");
 const configured = !!(firebaseConfig && firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("PEGA"));
 const urlCode = (new URLSearchParams(location.search).get("s") || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
-const DEF = { impostors: 1, pool: "all", era: "all", level: 2, hint: "none" };
+const DEF = { impostors: 1, pool: "all", era: "all", level: 2, hint: "random" };
 
 const store = {
   get: (k, d = null) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
@@ -31,7 +31,6 @@ const S = {
   room: null,
   secret: null,
   reveal: false,
-  flipAnim: false,
   busy: false,
   finishing: false,
   dealing: false,
@@ -53,8 +52,6 @@ const players = () => Object.entries(S.room?.players || {}).filter(([, p]) => p 
 const onlineIds = () => players().filter(([, p]) => p.online !== false).map(([id]) => id);
 const onlineRef = () => ref(db, `rooms/${S.code}/players/${S.uid}/online`);
 const roomPath = (p = "") => `rooms/${S.code}${p ? "/" + p : ""}`;
-const hue = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-const avatar = (name) => `<span class="av" style="--h:${hue(name)}">${esc(String(name || "?").trim().charAt(0).toUpperCase())}</span>`;
 const arr = (x) => (Array.isArray(x) ? x : Object.values(x || {})).filter((v) => v != null); // RTDB puede devolver arrays como objetos
 const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 
@@ -230,11 +227,15 @@ function recentLocal() {
   try { return JSON.parse(store.get("imp.recent", "[]")) || []; } catch { return []; }
 }
 
+/** Pista aleatoria para el impostor: un dato suelto del futbolista. */
 function hintFor(fp, mode) {
-  if (mode === "pos") return POS_LABEL[fp.pos];
-  if (mode === "country") return `${flag(fp.country)} ${fp.country}`;
-  if (mode === "club") return pick(fp.clubs);
-  return "";
+  if (!mode || mode === "none") return "";
+  const pos = { P: "Es portero", D: "Es defensa", M: "Es centrocampista", F: "Es delantero" }[fp.pos];
+  const opts = [pos, `Es de ${fp.country}`, fp.era === "l" ? "Es de otra época" : "Juega actualmente"];
+  if (fp.country !== "España") opts.push(isLiga(fp) ? "Ha jugado en LaLiga" : "Nunca ha jugado en LaLiga");
+  // Un club solo si ha tenido varios; si no, sería regalarle la respuesta.
+  if (fp.clubs.length >= 3) opts.push(`Ha pasado por: ${pick(fp.clubs)}`);
+  return pick(opts);
 }
 
 async function startRound() {
@@ -432,11 +433,11 @@ const A = {
     await set(ref(db, roomPath("scores")), null);
   }),
   takehost: run(async () => { await set(ref(db, roomPath("host")), S.uid); }),
-  flip: () => { S.reveal = !S.reveal; S.flipAnim = S.reveal; if (S.reveal) navigator.vibrate?.(15); render(); },
+  flip: () => { S.reveal = !S.reveal; render(); },
   share: async () => {
     const url = `${location.origin}${location.pathname}?s=${S.code}`;
-    const text = `Únete a mi sala de Impostor Fútbol: ${S.code}`;
-    if (navigator.share) { try { await navigator.share({ title: "Impostor Fútbol", text, url }); } catch {} return; }
+    const text = `Únete a mi sala de Impostor fútbol: ${S.code}`;
+    if (navigator.share) { try { await navigator.share({ title: "Impostor · fútbol", text, url }); } catch {} return; }
     try { await navigator.clipboard.writeText(url); toast("Enlace copiado"); } catch { toast(url); }
   },
 };
@@ -487,12 +488,11 @@ function draw() {
   let html;
   if (!configured) html = setupView();
   else if (S.fatal) html = msgView(esc(S.fatal));
-  else if (!S.uid) html = msgView("Calentando…", true);
+  else if (!S.uid) html = msgView("Conectando…");
   else if (!S.name) html = nameView();
   else if (!S.code) html = homeView();
-  else if (!S.room) html = msgView(`Entrando en ${esc(S.code)}…`, true);
+  else if (!S.room) html = msgView(`Entrando en ${esc(S.code)}…`);
   else html = ({ lobby: lobbyView, playing: playView, voting: voteView, guess: guessView, results: resultView }[S.room.status] || lobbyView)();
-  S.flipAnim = false;
   if (html === lastHtml) return;
   lastHtml = html;
 
@@ -506,8 +506,8 @@ function draw() {
 }
 
 /* ---------- vistas ---------- */
-const brand = (big = false) => `<div class="brand ${big ? "big" : ""}"><span class="mark" aria-hidden="true">?</span><span class="brand-t">Impostor<b>Fútbol</b></span></div>`;
-const msgView = (m, spin = false) => `<main class="screen center">${spin ? '<div class="ball" aria-hidden="true"></div>' : ""}<p class="muted center-t">${m}</p></main>`;
+const brand = () => `<div class="brand"><span class="mark">?</span><span>Impostor</span><span class="dim">fútbol</span></div>`;
+const msgView = (m) => `<main class="screen center"><p class="muted center-t">${m}</p></main>`;
 
 function setupView() {
   return `<main class="screen">
@@ -518,75 +518,67 @@ function setupView() {
 }
 
 function nameView() {
-  return `<main class="screen hero">
-    ${brand(true)}
-    <p class="tagline">Todos saben quién es el futbolista.<br>Menos uno.</p>
+  return `<main class="screen">
+    ${brand()}
     <div class="grow"></div>
     <form data-f="name" class="stack">
       <label class="lbl" for="n">¿Cómo te llamas?</label>
       <input id="n" name="n" maxlength="16" autocomplete="nickname" enterkeyhint="go" placeholder="Tu nombre" value="${esc(S.nameInput)}" required autofocus>
-      <button class="btn primary big">Saltar al campo</button>
+      <button class="btn primary">Entrar</button>
     </form>
-    <p class="foot center-t">Sin cuentas ni contraseñas. El nombre se guarda en este móvil.</p>
+    <p class="foot">Sin contraseñas. El nombre se queda guardado en este móvil.</p>
   </main>`;
 }
 
 function homeView() {
-  return `<main class="screen hero">
-    <header class="bar">${brand()}<button class="chip" data-a="rename">${avatar(S.name)}${esc(S.name)}</button></header>
+  return `<main class="screen">
+    <header class="bar">${brand()}<button class="link" data-a="rename">${esc(S.name)} · cambiar</button></header>
     <div class="grow"></div>
     <button class="btn primary big" data-a="create" ${S.busy ? "disabled" : ""}>Crear sala</button>
-    <div class="or"><span>o únete con código</span></div>
+    <div class="or"><span>o únete con un código</span></div>
     <form data-f="join" class="row">
       <input name="c" class="code-in" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="go" value="${esc(S.codeInput)}" aria-label="Código de sala">
-      <button class="btn" ${S.busy ? "disabled" : ""}>Entrar</button>
+      <button class="btn" ${S.busy ? "disabled" : ""}>Unirse</button>
     </form>
     <div class="grow"></div>
     <ol class="how">
-      <li><b>Reparto.</b> Todos ven el mismo futbolista, menos el impostor.</li>
-      <li><b>Pistas.</b> Por turnos, una palabra cada uno sin decir el nombre.</li>
-      <li><b>VAR.</b> Votad quién está fingiendo.</li>
-      <li><b>Última bala.</b> Si pilláis al impostor, aún puede robaros la ronda adivinando el futbolista.</li>
+      <li>Uno crea la sala y comparte el código.</li>
+      <li>Todos reciben el mismo futbolista, menos el impostor.</li>
+      <li>Por turnos, cada uno da una pista sin decir el nombre.</li>
+      <li>Votad quién está fingiendo. Si lo pilláis, aún puede ganar adivinando el futbolista.</li>
     </ol>
-    <p class="foot center-t">${PLAYERS.length} futbolistas · LaLiga, Sudamérica y leyendas</p>
   </main>`;
 }
 
 function seg(key, opts, cur) {
   const h = isHost();
-  return `<div class="seg" role="group">${opts.map(([v, l]) =>
-    `<button data-a="set" data-k="${key}" data-v="${v}" class="${String(cur) === String(v) ? "on" : ""}" ${h ? "" : "disabled"} aria-pressed="${String(cur) === String(v)}">${l}</button>`).join("")}</div>`;
+  return `<div class="seg">${opts.map(([v, l]) =>
+    `<button data-a="set" data-k="${key}" data-v="${v}" class="${String(cur) === String(v) ? "on" : ""}" ${h ? "" : "disabled"}>${l}</button>`).join("")}</div>`;
 }
 
 function hostBanner() {
   const r = S.room;
   const hostP = r.players?.[r.host];
   if (isHost() || (hostP && hostP.online !== false)) return "";
-  return `<div class="banner"><span>${esc(hostP?.name || "El anfitrión")} se ha desconectado</span><button class="btn small" data-a="takehost" ${S.busy ? "disabled" : ""}>Tomar el mando</button></div>`;
+  return `<div class="banner"><span>${esc(hostP?.name || "El anfitrión")} se ha desconectado</span><button class="btn small" data-a="takehost" ${S.busy ? "disabled" : ""}>Ser anfitrión</button></div>`;
 }
 
 function roomBar(label) {
-  return `<header class="bar">
-    <button class="link" data-a="leave" aria-label="Salir de la sala">← Salir</button>
-    <span class="bar-mid">${label}</span>
-    <button class="code-tag" data-a="share" aria-label="Compartir sala">${esc(S.code)}</button>
-  </header>${hostBanner()}`;
+  return `<header class="bar"><button class="link" data-a="leave">← Salir</button><span class="muted small">${label}</span><button class="link code-tag" data-a="share">${esc(S.code)}</button></header>${hostBanner()}`;
 }
 
-function ranking(compact = false) {
+function ranking(withReset = false) {
   const sc = Object.entries(S.room.scores || {}).filter(([, s]) => s && s.name).sort((a, b) => b[1].pts - a[1].pts);
   if (!sc.length) return "";
   const delta = S.room.status === "results" ? S.room.result?.delta || {} : {};
-  const medal = ["🥇", "🥈", "🥉"];
-  return `<h2 class="sec">Clasificación ${isHost() && !compact ? '<button class="link tiny" data-a="resetscores">reiniciar</button>' : ""}</h2>
-  <ol class="list rank">${sc.map(([id, s], i) => `
-    <li class="${id === S.uid ? "me" : ""}">
-      <span class="pos">${medal[i] && s.pts > 0 ? medal[i] : i + 1}</span>
-      <span class="pname">${esc(s.name)}</span>
-      ${delta[id] ? `<span class="plus">+${delta[id]}</span>` : ""}
-      <span class="pts">${s.pts}</span>
+  return `<h2 class="sec">Puntos ${withReset && isHost() ? '<button class="link tiny" data-a="resetscores">reiniciar</button>' : ""}</h2>
+  <ul class="list">${sc.map(([id, s]) => `
+    <li>
+      <span class="pname">${esc(s.name)}${id === S.uid ? ' <span class="muted">(tú)</span>' : ""}</span>
+      ${delta[id] ? `<span class="muted small">+${delta[id]}</span>` : ""}
+      <span class="count">${s.pts}</span>
     </li>`).join("")}
-  </ol>`;
+  </ul>`;
 }
 
 function lobbyView() {
@@ -594,87 +586,59 @@ function lobbyView() {
   const online = ps.filter(([, p]) => p.online !== false).length;
   const hostName = r.players[r.host]?.name || "el anfitrión";
   const poolSize = buildPool(st).length;
-  const kEff = Math.max(1, Math.min(st.impostors, Math.floor((online - 1) / 2)));
   return `<main class="screen">
-    ${roomBar("Vestuario")}
-    <section class="code-box">
-      <span class="lbl">Código de sala</span>
-      <button class="code-big" data-a="share" aria-label="Compartir código">${[...S.code].map((c) => `<span>${c}</span>`).join("")}</button>
-      <button class="btn ghost small" data-a="share">Invitar a la peña</button>
-    </section>
+    ${roomBar("Sala")}
+    <button class="code-big" data-a="share" aria-label="Compartir código">${esc(S.code)}</button>
+    <button class="btn ghost small center-self" data-a="share">Compartir enlace</button>
 
-    <h2 class="sec">Convocados <span class="badge">${online}</span></h2>
+    <h2 class="sec">Jugadores <span class="muted">${online}</span></h2>
     <ul class="list">${ps.map(([id, p]) => `
-      <li class="${p.online === false ? "off" : ""}">
-        ${avatar(p.name)}
+      <li>
+        <span class="dot ${p.online === false ? "off" : ""}"></span>
         <span class="pname">${esc(p.name)}${id === S.uid ? ' <span class="muted">(tú)</span>' : ""}</span>
-        ${id === r.host ? '<span class="tag">capitán</span>' : ""}
-        ${p.online === false ? '<span class="tag dim">fuera</span>' : ""}
-        ${isHost() && id !== S.uid ? `<button class="x" data-a="kick" data-v="${id}" aria-label="Sacar a ${esc(p.name)}">×</button>` : ""}
+        ${id === r.host ? '<span class="tag">anfitrión</span>' : ""}
+        ${isHost() && id !== S.uid ? `<button class="x" data-a="kick" data-v="${id}" aria-label="Sacar">×</button>` : ""}
       </li>`).join("")}
     </ul>
 
-    ${ranking()}
+    ${ranking(true)}
 
-    <h2 class="sec">Ajustes ${isHost() ? "" : '<span class="muted small">· los toca el capitán</span>'}</h2>
-    <div class="setting"><span class="lbl">Bombo</span>${seg("pool", POOL_OPTS, st.pool)}</div>
+    <h2 class="sec">Ajustes ${isHost() ? "" : '<span class="muted small">· los cambia el anfitrión</span>'}</h2>
+    <div class="setting"><span class="lbl">Futbolistas</span>${seg("pool", POOL_OPTS, st.pool)}</div>
     <div class="setting"><span class="lbl">Época</span>${seg("era", ERA_OPTS, st.era)}</div>
     <div class="setting"><span class="lbl">Dificultad</span>${seg("level", LEVEL_OPTS, st.level)}</div>
     <div class="setting"><span class="lbl">Impostores</span>${seg("impostors", [[1, "1"], [2, "2"], [3, "3"]], st.impostors)}</div>
-    <div class="setting"><span class="lbl">Pista para el impostor</span>${seg("hint", HINT_OPTS, st.hint)}</div>
-    <p class="foot"><b>${poolSize}</b> futbolistas en el bombo${st.impostors > 1 && online >= 3 && kEff < st.impostors ? ` · con ${online} jugadores habrá ${plural(kEff, "impostor", "impostores")}` : ""}</p>
+    <div class="setting"><span class="lbl">Pista al impostor</span>${seg("hint", HINT_OPTS, st.hint === "none" ? "none" : "random")}</div>
+    <p class="foot">${poolSize} futbolistas en el bombo${st.hint !== "none" ? " · el impostor recibe un dato al azar (posición, país, un club…)" : ""}${st.impostors > 1 ? " · con pocos jugadores se reduce el número de impostores" : ""}</p>
 
     <div class="sticky">
       ${isHost()
         ? `<button class="btn primary big" data-a="start" ${online < 3 || S.busy ? "disabled" : ""}>${online < 3 ? `Faltan ${3 - online} para empezar` : "Repartir cartas"}</button>`
-        : `<p class="wait"><span class="pulse"></span>Esperando a que ${esc(hostName)} reparta…</p>`}
+        : `<p class="wait">Esperando a que ${esc(hostName)} reparta…</p>`}
     </div>
   </main>`;
 }
 
-function fifaCard(name, opts = {}) {
-  const p = BY_NAME.get(name);
-  const anim = opts.anim ? " anim" : "";
-  const tag = opts.button ? "button" : "div";
-  const act = opts.button ? ' data-a="flip"' : "";
-  if (!p) {
-    return `<${tag} class="fut${anim}"${act}><span class="fut-k">${opts.kicker || "Tu futbolista"}</span><span class="fut-name solo">${esc(name)}</span>${opts.foot || ""}</${tag}>`;
-  }
-  const tier = p.era === "l" ? "icon" : p.lvl === 1 ? "gold" : "silver";
-  return `<${tag} class="fut ${tier}${anim}"${act} aria-label="${esc(p.name)}">
-    <span class="fut-top">
-      <span class="fut-pos">${POS_SHORT[p.pos]}</span>
-      <span class="fut-flag" title="${esc(p.country)}">${flag(p.country)}</span>
-      <span class="fut-era">${p.era === "l" ? "LEYENDA" : "EN ACTIVO"}</span>
-    </span>
-    <span class="fut-k">${opts.kicker || "Tu futbolista"}</span>
-    <span class="fut-name">${esc(p.name)}</span>
-    <span class="fut-meta">${POS_LABEL[p.pos]} · ${esc(p.country)}</span>
-    <span class="fut-clubs">${p.clubs.map((c) => `<i>${esc(c)}</i>`).join("")}</span>
-    ${opts.foot || ""}
-  </${tag}>`;
-}
-
 function card() {
   const s = S.secret;
-  if (!s || s.n !== S.room.round?.n) return `<div class="card closed"><div class="ball" aria-hidden="true"></div><span class="muted">Repartiendo…</span></div>`;
-  if (!S.reveal) {
-    return `<button class="card closed" data-a="flip" aria-label="Ver mi carta">
-      <span class="card-back" aria-hidden="true">?</span>
-      <span class="card-tap">Toca para ver tu carta</span>
-      <span class="card-warn">Que no te la vea nadie</span>
-    </button>`;
-  }
+  if (!s || s.n !== S.room.round?.n) return `<div class="card"><p class="muted">Repartiendo…</p></div>`;
+  if (!S.reveal) return `<button class="card closed" data-a="flip"><span class="card-q">?</span><span class="muted">Toca para ver tu carta</span></button>`;
   if (s.role === "impostor") {
-    return `<button class="card imp${S.flipAnim ? " anim" : ""}" data-a="flip">
+    return `<button class="card open imp" data-a="flip">
       <span class="card-k">Eres el</span>
-      <span class="card-imp">IMPOSTOR</span>
-      <span class="card-sub">${s.hint ? `Pista: <b>${esc(s.hint)}</b>` : "Sin pista. Escucha y disimula."}</span>
-      ${s.k > 1 ? `<span class="card-sub dim">Hay ${s.k} impostores en el campo</span>` : ""}
+      <span class="card-name">IMPOSTOR</span>
+      <span class="card-sub">${s.hint ? `Pista: ${esc(s.hint)}` : "Sin pista. Disimula."}</span>
+      ${s.k > 1 ? `<span class="card-sub dim">Hay ${s.k} impostores</span>` : ""}
       <span class="card-hide">Toca para ocultar</span>
     </button>`;
   }
-  return fifaCard(s.player, { button: true, anim: S.flipAnim, foot: '<span class="card-hide">Toca para ocultar</span>' });
+  const p = BY_NAME.get(s.player);
+  return `<button class="card open" data-a="flip">
+    <span class="card-k">Tu futbolista</span>
+    <span class="card-name">${esc(s.player)}</span>
+    ${p ? `<span class="card-sub dim">${POS_LABEL[p.pos]} · ${esc(p.country)}</span><span class="card-clubs">${p.clubs.map(esc).join(" · ")}</span>` : ""}
+    <span class="card-hide">Toca para ocultar</span>
+  </button>`;
 }
 
 const isHostOnline = () => S.room.players?.[S.room.host]?.online !== false;
@@ -683,33 +647,33 @@ const inRound = () => !!S.room.round?.roster?.[S.uid];
 function turnOrder() {
   const r = S.room.round;
   const order = (r.order ? arr(r.order) : Object.keys(r.roster)).filter((id) => r.roster[id]);
-  return `<div class="turns"><span class="lbl">Orden de pistas</span><ol>${order.map((id, i) =>
-    `<li class="${id === S.uid ? "me" : ""}"><span class="n">${i + 1}</span>${esc(r.roster[id])}</li>`).join("")}</ol></div>`;
+  return `<p class="starter">Empieza <b>${esc(r.roster[order[0]])}</b></p>
+    <p class="order muted small">${order.map((id) => id === S.uid ? `<b>${esc(r.roster[id])}</b>` : esc(r.roster[id])).join(" → ")}</p>`;
 }
 
 function waitingView(title, sub) {
-  return `<main class="screen">${roomBar("Sala")}<div class="grow"></div><div class="ball" aria-hidden="true"></div><h1 class="title center-t">${title}</h1><p class="muted center-t">${sub}</p><div class="grow"></div></main>`;
+  return `<main class="screen">${roomBar("Sala")}<div class="grow"></div><h1 class="title center-t">${title}</h1><p class="muted center-t">${sub}</p><div class="grow"></div></main>`;
 }
 
 function playView() {
   const r = S.room;
-  if (!inRound()) return waitingView("Partido en juego", isHostOnline() ? "Te están dando carta…" : "Entras en la siguiente ronda.");
+  if (!inRound()) return waitingView("Ronda en curso", isHostOnline() ? "Te están repartiendo carta…" : "Entrarás en la siguiente ronda.");
   return `<main class="screen">
     ${roomBar(`Ronda ${r.round.n}`)}
     ${card()}
     ${turnOrder()}
-    <p class="foot">Una palabra por turno sobre el futbolista. Dad un par de vueltas y luego al VAR.</p>
+    <p class="foot">Por turnos, cada uno dice una palabra sobre su futbolista. El impostor no lo sabe: tiene que pillarlo sobre la marcha.</p>
     <div class="sticky">
       ${isHost()
-        ? `<button class="btn primary big" data-a="tovote" ${S.busy ? "disabled" : ""}>Al VAR: votar</button>`
-        : `<p class="wait">El capitán abrirá la votación cuando acabéis.</p>`}
+        ? `<button class="btn primary big" data-a="tovote" ${S.busy ? "disabled" : ""}>Pasar a votación</button>`
+        : `<p class="wait">Cuando acabéis las rondas de pistas, el anfitrión abre la votación.</p>`}
     </div>
   </main>`;
 }
 
 function voteView() {
   const r = S.room;
-  if (!inRound()) return waitingView("Revisión en el VAR", isHostOnline() ? "Te están dando carta…" : "Entras en la siguiente ronda.");
+  if (!inRound()) return waitingView("Votación en curso", isHostOnline() ? "Te están repartiendo carta…" : "Entrarás en la siguiente ronda.");
   const roster = Object.entries(r.round.roster);
   const votes = r.votes || {};
   const mine = votes[S.uid];
@@ -717,21 +681,19 @@ function voteView() {
   return `<main class="screen">
     ${roomBar(`Ronda ${r.round.n}`)}
     <h1 class="title">¿Quién es el impostor?</h1>
-    <div class="progress" style="--p:${roster.length ? done / roster.length : 0}"><span></span></div>
     <p class="muted small">${done} de ${roster.length} han votado${mine ? " · puedes cambiar tu voto" : ""}</p>
-    <ul class="votes">${roster.filter(([id]) => id !== S.uid).map(([id, name]) => `
-      <li><button class="vote ${mine === id ? "on" : ""}" data-a="vote" data-v="${id}" aria-pressed="${mine === id}">
-        ${avatar(name)}
+    <ul class="list votes">${roster.filter(([id]) => id !== S.uid).map(([id, name]) => `
+      <li><button class="vote ${mine === id ? "on" : ""}" data-a="vote" data-v="${id}">
         <span class="pname">${esc(name)}</span>
-        ${votes[id] ? '<span class="tick" title="Ya ha votado">✓</span>' : '<span class="tick wait-dot" title="Pensando">…</span>'}
+        ${votes[id] ? '<span class="muted small">ya votó</span>' : ""}
       </button></li>`).join("")}
     </ul>
     <button class="btn ghost small center-self" data-a="flip">${S.reveal ? "Ocultar mi carta" : "Ver mi carta otra vez"}</button>
     ${S.reveal ? card() : ""}
     <div class="sticky">
       ${isHost()
-        ? `<button class="btn ${done === roster.length ? "primary" : ""} big" data-a="close" ${S.busy ? "disabled" : ""}>${done < roster.length ? `Cerrar votación (${done}/${roster.length})` : "Ver resultado"}</button>`
-        : `<p class="wait">Se resuelve cuando vote todo el mundo.</p>`}
+        ? `<button class="btn primary big" data-a="close" ${S.busy ? "disabled" : ""}>Revelar${done < roster.length ? " ya" : ""}</button>`
+        : `<p class="wait">Se revela cuando vote todo el mundo.</p>`}
     </div>
   </main>`;
 }
@@ -742,21 +704,18 @@ function guessView() {
   const who = esc(roster[g.by] || "el impostor");
   return `<main class="screen">
     ${roomBar(`Ronda ${r.round?.n ?? ""}`)}
-    <div class="verdict win">${me ? "¡Te han pillado!" : `¡Pillado ${who}!`}</div>
-    <p class="center-t">${me
-      ? "Última bala: si aciertas el futbolista, te llevas la ronda."
-      : `Pero aún puede robaros la ronda si adivina el futbolista…`}</p>
-    <div class="guess-grid">${arr(g.options).map((o) => {
-      const p = BY_NAME.get(o);
-      return `<button class="guess ${r.guessPick === o ? "on" : ""}" data-a="guess" data-v="${esc(o)}" ${me && !S.busy ? "" : "disabled"}>
-        <span class="g-flag">${p ? flag(p.country) : ""}</span><span class="g-name">${esc(o)}</span>
-        ${p ? `<span class="g-meta">${POS_SHORT[p.pos]} · ${esc(p.clubs[p.clubs.length - 1] || "")}</span>` : ""}
-      </button>`;
-    }).join("")}</div>
+    <div class="verdict win">${me ? "Te han pillado" : `¡Pillado ${who}!`}</div>
+    <p class="muted center-t">${me
+      ? "Si adivinas el futbolista, ganas la ronda igualmente."
+      : `Si adivina el futbolista, gana la ronda igualmente.`}</p>
+    <ul class="list votes">${arr(g.options).map((o) => `
+      <li><button class="vote ${r.guessPick === o ? "on" : ""}" data-a="guess" data-v="${esc(o)}" ${me && !S.busy ? "" : "disabled"}>
+        <span class="pname">${esc(o)}</span>
+      </button></li>`).join("")}
+    </ul>
     <div class="sticky">
-      ${me ? '<p class="wait">Elige bien. Solo tienes una.</p>'
-        : isHost() ? `<p class="wait"><span class="pulse"></span>${who} está pensando…</p><button class="link center-self block" data-a="skipguess">Saltar (no contesta)</button>`
-        : `<p class="wait"><span class="pulse"></span>${who} está pensando…</p>`}
+      ${me ? '<p class="wait">Solo tienes un intento.</p>'
+        : `<p class="wait">${who} está eligiendo…</p>${isHost() ? '<button class="link center-self block" data-a="skipguess">Saltar</button>' : ""}`}
     </div>
   </main>`;
 }
@@ -768,35 +727,37 @@ function resultView() {
   const tally = Object.entries(res.tally || {}).sort((a, b) => b[1] - a[1]);
   const votersOf = (id) => Object.entries(res.votes || {}).filter(([, t]) => t === id).map(([v]) => roster[v]).filter(Boolean);
   const iWasImp = imps.includes(S.uid);
-  const myDelta = res.delta?.[S.uid] || 0;
-  const V = {
-    crew: ["¡Pillado!", "Gana el equipo", "win"],
-    steal: ["¡Robo!", `${esc(roster[res.top] || "El impostor")} acertó el futbolista`, "steal"],
-    imp: [res.tied ? "Empate en el VAR" : "Se escapa", imps.length > 1 ? "Ganan los impostores" : "Gana el impostor", "lose"],
-  }[res.winner || (res.caught ? "crew" : "imp")];
+  const winner = res.winner || (res.caught ? "crew" : "imp");
+  const [verdict, cls] = {
+    crew: [imps.length > 1 ? "¡Pillado uno!" : "¡Pillado!", "win"],
+    steal: ["Pillado, pero lo ha adivinado", "lose"],
+    imp: [res.tied ? "Empate. El impostor se escapa." : "Gana el impostor", "lose"],
+  }[winner];
+  const p = BY_NAME.get(res.player);
   return `<main class="screen">
     ${roomBar(`Ronda ${r.round?.n ?? ""}`)}
-    <div class="verdict ${V[2]}">${V[0]}</div>
-    <p class="center-t muted">${V[1]}${myDelta ? ` · <b class="plus">+${myDelta}</b> para ti` : ""}</p>
-    ${fifaCard(res.player, { kicker: "El futbolista era" })}
+    <div class="verdict ${cls}">${verdict}</div>
     <div class="reveal-box">
-      <span class="lbl">${imps.length > 1 ? "Impostores" : "Impostor"}</span>
-      <span class="imp-name">${impNames.map(esc).join(" y ")}${iWasImp ? ' <span class="muted">(tú)</span>' : ""}</span>
-      ${res.caught && res.guessPick !== undefined ? `<span class="small muted">Su apuesta: <b class="${res.winner === "steal" ? "ok" : "ko"}">${esc(res.guessPick || "no contestó")}</b></span>` : ""}
+      <span class="card-k">El futbolista era</span>
+      <span class="card-name">${esc(res.player)}</span>
+      ${p ? `<span class="muted small">${p.clubs.map(esc).join(" · ")}</span>` : ""}
+      <span class="card-k">${imps.length > 1 ? "Impostores" : "Impostor"}</span>
+      <span class="imp-name">${impNames.map(esc).join(", ")}${iWasImp ? ' <span class="muted">(tú)</span>' : ""}</span>
+      ${res.caught ? `<span class="muted small">Dijo: ${esc(res.guessPick || "nada")}</span>` : ""}
     </div>
     <h2 class="sec">Votos</h2>
     <ul class="list">${tally.map(([id, n]) => `
       <li>
-        ${avatar(roster[id] || "?")}
-        <span class="pname">${esc(roster[id] || "?")}${imps.includes(id) ? ' <span class="tag red">impostor</span>' : ""}<span class="voters">${votersOf(id).map(esc).join(", ")}</span></span>
+        <span class="pname">${esc(roster[id] || "?")}${votersOf(id).length ? `<span class="voters">${votersOf(id).map(esc).join(", ")}</span>` : ""}</span>
+        ${imps.includes(id) ? '<span class="tag red">impostor</span>' : ""}
         <span class="count">${n}</span>
       </li>`).join("")}
     </ul>
-    ${ranking(true)}
+    ${ranking()}
     <div class="sticky">
       ${isHost()
         ? `<div class="row"><button class="btn" data-a="lobby" ${S.busy ? "disabled" : ""}>Ajustes</button><button class="btn primary grow1" data-a="start" ${S.busy ? "disabled" : ""}>Otra ronda</button></div>`
-        : `<p class="wait"><span class="pulse"></span>Esperando la siguiente ronda…</p>`}
+        : `<p class="wait">Esperando la siguiente ronda…</p>`}
     </div>
   </main>`;
 }

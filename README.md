@@ -1,4 +1,4 @@
-# Impostor Fútbol ⚽️
+# Impostor · fútbol
 
 PWA para jugar al impostor con futbolistas, cada uno en su móvil. Salas con código de 4 letras, sin cuentas: solo tu nombre.
 
@@ -6,10 +6,10 @@ PWA para jugar al impostor con futbolistas, cada uno en su móvil. Salas con có
 
 ## Cómo se juega
 1. Uno crea la sala y comparte el enlace o el código.
-2. El capitán reparte: todos ven la carta del mismo futbolista (con su trayectoria), menos el impostor.
+2. El anfitrión reparte: todos ven el mismo futbolista (con sus clubes), menos el impostor.
 3. Por turnos, en el orden que marca la app, cada uno dice una palabra sin decir el nombre. **El impostor nunca empieza.**
-4. Al VAR: se vota en la app. La votación se cierra sola cuando vota todo el mundo.
-5. **Última bala:** si pilláis al impostor, aún puede llevarse la ronda eligiendo el futbolista entre 6 opciones muy parecidas.
+4. Se vota en la app. La votación se cierra sola cuando vota todo el mundo.
+5. **Última oportunidad:** si pilláis al impostor, aún puede llevarse la ronda eligiendo el futbolista entre 6 opciones muy parecidas.
 
 ### Puntos
 | Situación | Puntos |
@@ -18,18 +18,19 @@ PWA para jugar al impostor con futbolistas, cada uno en su móvil. Salas con có
 | El impostor se escapa (o hay empate) | +2 para el impostor |
 | El impostor es pillado pero acierta el futbolista | +2 para el impostor |
 
-La clasificación se mantiene durante toda la sesión (el capitán puede reiniciarla).
+La clasificación se mantiene durante toda la sesión (el anfitrión puede reiniciarla).
 
-### Ajustes del capitán
-- **Bombo:** Todos · LaLiga (han jugado en un equipo español) · Sudamérica
+### Ajustes del anfitrión
+- **Futbolistas:** Todos · LaLiga (han jugado en un equipo español) · Sudamérica
 - **Época:** Todas · Actuales · Leyendas
 - **Dificultad:** Fácil (solo cracks) · Normal · Friki (todo el catálogo)
 - **Impostores:** 1–3 (se ajusta solo si sois pocos)
-- **Pista para el impostor:** Nada · Posición · País · Club
+- **Pista al impostor:** Sí/No. Si está activada, el impostor recibe un dato al azar del futbolista: posición, país, si es actual o de otra época, si ha jugado en LaLiga o uno de sus clubes (solo si ha tenido varios).
 
 ### Detalles que ayudan
 - No se repiten futbolistas en la misma sala (se guardan los últimos 250).
-- Si el capitán se cae, cualquiera puede **tomar el mando** y seguir la partida.
+- Si el anfitrión se cae, cualquiera puede pulsar **Ser anfitrión** y seguir la partida.
+- Si alguien vuelve a la app con la ronda empezada, recibe carta automáticamente.
 - La pantalla no se apaga mientras estás en una sala.
 - Funciona sin conexión una vez cargada (excepto la sincronización, claro).
 
@@ -40,7 +41,7 @@ La clasificación se mantiene durante toda la sesión (el capitán puede reinici
 2. **Compilación → Authentication → Comenzar → Anónimo → Habilitar.**
 3. **Compilación → Realtime Database → Crear base de datos** → ubicación Bélgica (europe-west1) → modo bloqueado.
 4. En la pestaña **Reglas**, borra lo que haya, pega el contenido de `database.rules.json` y pulsa **Publicar**.
-   ⚠️ Si ya tenías la versión anterior, **vuelve a publicar las reglas**: han cambiado (validación de votos, última oportunidad y relevo de capitán).
+   ⚠️ Si ya tenías la versión anterior, **vuelve a publicar las reglas**: han cambiado (validación de votos, última oportunidad y cambio de anfitrión).
 5. **⚙ Configuración del proyecto → Tus apps → icono `</>` (Web)** → registra la app → copia el objeto `firebaseConfig` y pégalo en `config.js`.
    - Comprueba que incluye `databaseURL`. Si no aparece, cópiala de la parte de arriba de Realtime Database.
 
@@ -68,9 +69,9 @@ La `apiKey` de Firebase es pública por diseño; lo que protege los datos son la
 ```
 rooms/{CODE}        sala pública para los jugadores (estado, ajustes, jugadores, votos, puntos, resultado)
 secrets/{CODE}/{uid} la carta de cada jugador: solo la puede leer su dueño
-hostdata/{CODE}     quién es el impostor y el historial de futbolistas: solo el capitán
+hostdata/{CODE}     quién es el impostor y el historial de futbolistas: solo el anfitrión
 ```
-El reparto se hace en una sola escritura atómica. Las reglas validan que solo se pueda votar durante la votación, a alguien de la ronda y no a uno mismo; que solo el impostor pillado pueda responder la última oportunidad; y que solo se pueda tomar el mando si el capitán está desconectado. Las salas sin actividad en 24 h se pueden reutilizar.
+El reparto se hace en una sola escritura atómica. Las reglas validan que solo se pueda votar durante la votación, a alguien de la ronda y no a uno mismo; que solo el impostor pillado pueda responder la última oportunidad; y que solo se pueda ser anfitrión si el anfitrión actual está desconectado. Las salas sin actividad en 24 h se pueden reutilizar.
 
 ## Problemas típicos
 - *"No se pudo iniciar sesión (auth/operation-not-allowed)"* → no has activado el acceso Anónimo.
