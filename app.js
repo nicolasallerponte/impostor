@@ -32,6 +32,8 @@ const S = {
   flipAnim: false,
   busy: false,
   finishing: false,
+  dealing: false,
+  connected: false,
   fatal: "",
 };
 let db, offRoom = null, offSecret = null, toastTimer, wakeLock = null;
@@ -101,7 +103,7 @@ if (configured) {
     }
     S.uid = user.uid;
     render();
-    onValue(ref(db, ".info/connected"), (snap) => { if (snap.val() && S.code) markOnline(); });
+    onValue(ref(db, ".info/connected"), (snap) => { S.connected = !!snap.val(); if (S.connected && S.code) markOnline(); });
     if (S.name) autoJoin();
   });
 }
@@ -166,7 +168,9 @@ function enterRoom(code) {
     const prev = S.room?.status;
     const wasHost = isHost();
     S.room = r;
-    if (first) markOnline();
+    // Autocuración de la presencia: el aviso de desconexión de una conexión vieja puede llegar
+    // tarde y marcarnos como fuera aunque estemos dentro. Si lo vemos estando conectados, lo corregimos.
+    if (first || (S.connected && r.players[S.uid].online === false)) markOnline();
     if (r.status !== prev) { S.reveal = false; window.scrollTo(0, 0); }
     if (r.status === "playing" && prev !== "playing") navigator.vibrate?.([40, 60, 40]);
     if (!first && !wasHost && isHost()) toast("Ahora eres el anfitrión");
@@ -292,6 +296,11 @@ function tallyVotes(r) {
 function hostDuties() {
   const r = S.room;
   if (!isHost() || S.finishing) return;
+  if ((r.status === "playing" || r.status === "voting") && r.round?.roster) {
+    // Quien vuelve a la app (o entra tarde) con la ronda empezada recibe carta de futbolista.
+    const missing = onlineIds().filter((id) => !r.round.roster[id]);
+    if (missing.length) { dealIn(missing); return; }
+  }
   if (r.status === "voting") {
     const roster = Object.keys(r.round?.roster || {});
     const active = roster.filter((id) => r.players?.[id]?.name && r.players[id].online !== false);
@@ -299,6 +308,26 @@ function hostDuties() {
   } else if (r.status === "guess" && r.guessPick) {
     finish(r.guessPick);
   }
+}
+
+async function dealIn(ids) {
+  if (S.dealing) return;
+  S.dealing = true;
+  try {
+    const r = S.room, code = S.code, n = r.round.n;
+    const hd = (await get(ref(db, `hostdata/${code}`))).val();
+    if (!hd?.player || S.room?.round?.n !== n) return;
+    const order = arr(r.round.order);
+    const upd = {};
+    for (const id of ids) {
+      upd[`secrets/${code}/${id}`] = { n, role: "crew", player: hd.player };
+      upd[`rooms/${code}/round/roster/${id}`] = r.players[id].name;
+      if (!order.includes(id)) order.push(id);
+    }
+    upd[`rooms/${code}/round/order`] = order;
+    await update(ref(db), upd);
+  } catch (e) { console.error(e); }
+  finally { S.dealing = false; }
 }
 
 async function closeVoting() {
@@ -646,6 +675,7 @@ function card() {
   return fifaCard(s.player, { button: true, anim: S.flipAnim, foot: '<span class="card-hide">Toca para ocultar</span>' });
 }
 
+const isHostOnline = () => S.room.players?.[S.room.host]?.online !== false;
 const inRound = () => !!S.room.round?.roster?.[S.uid];
 
 function turnOrder() {
@@ -661,7 +691,7 @@ function waitingView(title, sub) {
 
 function playView() {
   const r = S.room;
-  if (!inRound()) return waitingView("Partido en juego", "Entras en la siguiente ronda.");
+  if (!inRound()) return waitingView("Partido en juego", isHostOnline() ? "Te están dando carta…" : "Entras en la siguiente ronda.");
   return `<main class="screen">
     ${roomBar(`Ronda ${r.round.n}`)}
     ${card()}
@@ -677,7 +707,7 @@ function playView() {
 
 function voteView() {
   const r = S.room;
-  if (!inRound()) return waitingView("Revisión en el VAR", "Entras en la siguiente ronda.");
+  if (!inRound()) return waitingView("Revisión en el VAR", isHostOnline() ? "Te están dando carta…" : "Entras en la siguiente ronda.");
   const roster = Object.entries(r.round.roster);
   const votes = r.votes || {};
   const mine = votes[S.uid];
