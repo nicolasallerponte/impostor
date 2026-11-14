@@ -600,7 +600,7 @@ const LALIGA = new Set([
   "Sporting", "Tenerife", "Cádiz", "Recreativo", "Leganés", "Eibar", "Huesca", "Oviedo",
 ]);
 // "Sporting" de Lisboa se escribe igual que el de Gijón: solo cuenta como LaLiga si es español.
-const isLiga = (p) => p.clubs.some((c) => LALIGA.has(c) && !(c === "Sporting" && p.country !== "España"));
+export const isLiga = (p) => p.clubs.some((c) => LALIGA.has(c) && !(c === "Sporting" && p.country !== "España"));
 const SUDAMERICA = new Set(["Argentina", "Brasil", "Uruguay", "Colombia", "Chile", "Paraguay", "Ecuador", "Perú", "Venezuela", "Bolivia"]);
 const isSud = (p) => SUDAMERICA.has(p.country);
 
@@ -608,7 +608,7 @@ const isSud = (p) => SUDAMERICA.has(p.country);
 export const POOL_OPTS = [["all", "Todos"], ["liga", "LaLiga"], ["sud", "Sudamérica"]];
 export const ERA_OPTS = [["all", "Todas"], ["a", "Actuales"], ["l", "Leyendas"]];
 export const LEVEL_OPTS = [[1, "Fácil"], [2, "Normal"], [3, "Friki"]];
-export const HINT_OPTS = [["none", "Nada"], ["pos", "Posición"], ["country", "País"], ["club", "Club"]];
+export const HINT_OPTS = [["none", "No"], ["random", "Sí"]];
 
 const match = (p, s) =>
   (s.pool === "liga" ? isLiga(p) : s.pool === "sud" ? isSud(p) : true) &&

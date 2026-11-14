@@ -1,5 +1,5 @@
 {
-  "name": "Impostor Fútbol",
+  "name": "Impostor · fútbol",
   "short_name": "Impostor",
   "description": "El juego del impostor con futbolistas de LaLiga, Sudamérica y leyendas. Cada uno en su móvil.",
   "lang": "es",
@@ -7,8 +7,8 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#06110b",
-  "theme_color": "#06110b",
+  "background_color": "#0c0d0c",
+  "theme_color": "#0c0d0c",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
