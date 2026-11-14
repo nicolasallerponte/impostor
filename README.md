@@ -41,7 +41,7 @@ La clasificación se mantiene durante toda la sesión (el anfitrión puede reini
 2. **Compilación → Authentication → Comenzar → Anónimo → Habilitar.**
 3. **Compilación → Realtime Database → Crear base de datos** → ubicación Bélgica (europe-west1) → modo bloqueado.
 4. En la pestaña **Reglas**, borra lo que haya, pega el contenido de `database.rules.json` y pulsa **Publicar**.
-   ⚠️ Si ya tenías la versión anterior, **vuelve a publicar las reglas**: han cambiado (validación de votos, última oportunidad y relevo de capitán).
+   ⚠️ Si ya tenías la versión anterior, **vuelve a publicar las reglas**: han cambiado (validación de votos, última oportunidad y cambio de anfitrión).
 5. **⚙ Configuración del proyecto → Tus apps → icono `</>` (Web)** → registra la app → copia el objeto `firebaseConfig` y pégalo en `config.js`.
    - Comprueba que incluye `databaseURL`. Si no aparece, cópiala de la parte de arriba de Realtime Database.
 
@@ -69,9 +69,9 @@ La `apiKey` de Firebase es pública por diseño; lo que protege los datos son la
 ```
 rooms/{CODE}        sala pública para los jugadores (estado, ajustes, jugadores, votos, puntos, resultado)
 secrets/{CODE}/{uid} la carta de cada jugador: solo la puede leer su dueño
-hostdata/{CODE}     quién es el impostor y el historial de futbolistas: solo el capitán
+hostdata/{CODE}     quién es el impostor y el historial de futbolistas: solo el anfitrión
 ```
-El reparto se hace en una sola escritura atómica. Las reglas validan que solo se pueda votar durante la votación, a alguien de la ronda y no a uno mismo; que solo el impostor pillado pueda responder la última oportunidad; y que solo se pueda tomar el mando si el capitán está desconectado. Las salas sin actividad en 24 h se pueden reutilizar.
+El reparto se hace en una sola escritura atómica. Las reglas validan que solo se pueda votar durante la votación, a alguien de la ronda y no a uno mismo; que solo el impostor pillado pueda responder la última oportunidad; y que solo se pueda ser anfitrión si el anfitrión actual está desconectado. Las salas sin actividad en 24 h se pueden reutilizar.
 
 ## Problemas típicos
 - *"No se pudo iniciar sesión (auth/operation-not-allowed)"* → no has activado el acceso Anónimo.
