@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Impostor · fútbol</title>
-  <meta name="description" content="El juego del impostor con futbolistas. Salas para jugar con amigos, cada uno en su móvil.">
-  <meta name="theme-color" content="#0c0d0c">
+  <title>Impostor Fútbol</title>
+  <meta name="description" content="El juego del impostor con futbolistas de LaLiga, Sudamérica y leyendas. Cada uno en su móvil.">
+  <meta name="theme-color" content="#06110b">
+  <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,10 +14,17 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="modulepreload" href="players.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,800&family=Barlow:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app"><main class="screen center"><div class="ball" aria-hidden="true"></div></main></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <noscript>Activa JavaScript para jugar.</noscript>
   <script type="module" src="app.js"></script>
   <script>
