@@ -3,11 +3,13 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js";
+import { firebaseConfig } from "./config.js?v=3";
 import {
   PLAYERS, BY_NAME, POS_LABEL, POS_SHORT, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, decoys, flag,
-} from "./players.js";
+} from "./players.js?v=3";
 
+window.__booted = true;
+try { sessionStorage.removeItem("imp.repaired"); } catch {}
 const $ = document.getElementById("app");
 const $toast = document.getElementById("toast");
 const configured = !!(firebaseConfig && firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("PEGA"));

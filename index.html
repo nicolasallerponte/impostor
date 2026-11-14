@@ -17,16 +17,37 @@
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="modulepreload" href="players.js">
-  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="players.js?v=3">
+  <link rel="modulepreload" href="config.js?v=3">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,800&family=Barlow:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
   <div id="app"><main class="screen center"><div class="ball" aria-hidden="true"></div></main></div>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <noscript>Activa JavaScript para jugar.</noscript>
-  <script type="module" src="app.js"></script>
+  <script>
+    // Vigilante de arranque: si la app no arranca (caché con versiones mezcladas, red caída...),
+    // limpia la caché y recarga una vez sola; si vuelve a fallar, ofrece un botón.
+    window.__repair = async function () {
+      try { sessionStorage.setItem("imp.repaired", "1"); } catch (e) {}
+      try { const rs = await navigator.serviceWorker?.getRegistrations(); await Promise.all((rs || []).map((r) => r.unregister())); } catch (e) {}
+      try { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); } catch (e) {}
+      const q = new URLSearchParams(location.search); q.set("r", Date.now());
+      location.replace(location.pathname + "?" + q);
+    };
+    window.__bootFail = function () {
+      if (window.__booted || window.__failShown) return;
+      let tried = false; try { tried = sessionStorage.getItem("imp.repaired") === "1"; } catch (e) {}
+      if (!tried) return window.__repair();
+      window.__failShown = true;
+      document.getElementById("app").innerHTML = '<main class="screen center"><p class="center-t">La app no ha podido arrancar.</p>' +
+        '<p class="muted center-t small">' + (navigator.onLine ? "Pulsa reparar. Si sigue igual, puede que tu red bloquee Firebase (www.gstatic.com)." : "No tienes conexión.") + '</p>' +
+        '<button class="btn primary" onclick="__repair()">Reparar y recargar</button></main>';
+    };
+    setTimeout(window.__bootFail, 10000);
+  </script>
+  <script type="module" src="app.js?v=3" onerror="__bootFail()"></script>
   <script>
     if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
   </script>
