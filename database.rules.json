@@ -3,16 +3,34 @@
     "rooms": {
       "$code": {
         ".read": "auth != null",
-        ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid)",
+        ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid || (data.child('lastActive').isNumber() && data.child('lastActive').val() < now - 86400000))",
+        ".validate": "$code.matches(/^[A-Z]{4}$/)",
+        "host": {
+          ".write": "auth != null && newData.val() === auth.uid && data.exists() && root.child('rooms/' + $code + '/players/' + auth.uid + '/name').exists() && root.child('rooms/' + $code + '/players/' + data.val() + '/online').val() === false",
+          ".validate": "newData.isString()"
+        },
+        "status": {
+          ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|voting|guess|results)$/)"
+        },
         "players": {
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid"
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.hasChildren(['name']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 16",
+            "online": { ".validate": "newData.isBoolean()" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "name": { ".validate": true },
+            "$other": { ".validate": false }
           }
         },
         "votes": {
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid"
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.isString() && newData.val() !== $uid && root.child('rooms/' + $code + '/status').val() === 'voting' && root.child('rooms/' + $code + '/round/roster/' + $uid).exists() && root.child('rooms/' + $code + '/round/roster/' + newData.val()).exists()"
           }
+        },
+        "guessPick": {
+          ".write": "auth != null && root.child('rooms/' + $code + '/status').val() === 'guess' && root.child('rooms/' + $code + '/guess/by').val() === auth.uid",
+          ".validate": "newData.isString() && newData.val().length <= 60"
         }
       }
     },
