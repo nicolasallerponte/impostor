@@ -1,8 +1,8 @@
 // App: red primero (con límite de 2,5 s) para recibir siempre la última versión; si no hay red, caché.
 // Firebase SDK y fuente: caché primero (sus URLs llevan versión y no cambian).
-const V = "impostor-v8";
+const V = "impostor-v9";
 const ASSETS = [
-  "./", "./index.html", "./styles.css?v=8", "./app.js?v=8", "./players.js?v=8", "./config.js?v=8",
+  "./", "./index.html", "./styles.css?v=9", "./app.js?v=9", "./players.js?v=9", "./config.js?v=9",
   "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
 ];
 const CDN = ["www.gstatic.com", "fonts.googleapis.com", "fonts.gstatic.com"];

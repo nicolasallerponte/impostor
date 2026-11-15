@@ -3,10 +3,10 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js?v=8";
+import { firebaseConfig } from "./config.js?v=9";
 import {
   BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, isLiga, flag,
-} from "./players.js?v=8";
+} from "./players.js?v=9";
 
 window.__booted = true;
 try { sessionStorage.removeItem("imp.repaired"); } catch {}
@@ -258,10 +258,8 @@ async function startRound() {
   const n = (r.count || 0) + 1;
   const hint = hintFor(fp, st.hint);
 
-  // Orden de turnos: nunca empieza un impostor (sería injusto).
-  let order = shuffle(ids);
-  const firstCrew = order.findIndex((id) => !imps.includes(id));
-  order = [...order.slice(firstCrew), ...order.slice(0, firstCrew)];
+  // Orden de turnos totalmente al azar: el impostor también puede empezar.
+  const order = shuffle(ids);
 
   const secrets = {};
   const roster = {};

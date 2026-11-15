@@ -7,7 +7,7 @@ PWA para jugar al impostor con futbolistas, cada uno en su móvil. Salas con có
 ## Cómo se juega
 1. Uno crea la sala y comparte el enlace o el código.
 2. El anfitrión reparte: todos ven el mismo futbolista (con sus clubes), menos el impostor.
-3. Por turnos, en el orden que marca la app, cada uno dice una palabra sin decir el nombre. **El impostor nunca empieza.**
+3. Por turnos, en el orden que marca la app, cada uno dice una palabra sin decir el nombre.
 4. Votáis en voz alta quién creéis que es el impostor.
 5. El anfitrión pulsa **Revelar** y todos ven el futbolista y quién era el impostor.
 
