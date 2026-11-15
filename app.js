@@ -3,10 +3,10 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js?v=6";
+import { firebaseConfig } from "./config.js?v=7";
 import {
   BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, isLiga,
-} from "./players.js?v=6";
+} from "./players.js?v=7";
 
 window.__booted = true;
 try { sessionStorage.removeItem("imp.repaired"); } catch {}
