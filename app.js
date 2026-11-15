@@ -3,10 +3,10 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js?v=7";
+import { firebaseConfig } from "./config.js?v=8";
 import {
-  BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, isLiga,
-} from "./players.js?v=7";
+  BY_NAME, POS_LABEL, POOL_OPTS, ERA_OPTS, LEVEL_OPTS, HINT_OPTS, buildPool, isLiga, flag,
+} from "./players.js?v=8";
 
 window.__booted = true;
 try { sessionStorage.removeItem("imp.repaired"); } catch {}
@@ -31,6 +31,10 @@ const S = {
   room: null,
   secret: null,
   reveal: false,
+  walk: 0,          // paso del walkout (0 = nada, 1 nación, 2 posición, 3 club)
+  walkClub: "",
+  walkedRound: 0,
+  shine: false,
   busy: false,
   dealing: false,
   connected: false,
@@ -169,7 +173,7 @@ function enterRoom(code) {
     // Autocuración de la presencia: el aviso de desconexión de una conexión vieja puede llegar
     // tarde y marcarnos como fuera aunque estemos dentro. Si lo vemos estando conectados, lo corregimos.
     if (first || (S.connected && r.players[S.uid].online === false)) markOnline();
-    if (r.status !== prev) { S.reveal = false; window.scrollTo(0, 0); }
+    if (r.status !== prev) { S.reveal = false; if (S.walk) { walkTimers.forEach(clearTimeout); S.walk = 0; } window.scrollTo(0, 0); }
     if (r.status === "playing" && prev !== "playing") navigator.vibrate?.([40, 60, 40]);
     if (!first && !wasHost && isHost()) toast("Ahora eres el anfitrión");
     render();
@@ -340,7 +344,12 @@ const A = {
     await update(ref(db, roomPath()), { status: "lobby", round: null, result: null });
   }),
   takehost: run(async () => { await set(ref(db, roomPath("host")), S.uid); }),
-  flip: () => { S.reveal = !S.reveal; render(); },
+  flip: () => {
+    if (S.walk) return endWalk(); // tocar durante el walkout lo salta
+    const n = S.room?.round?.n;
+    if (!S.reveal && S.room?.status === "playing" && S.walkedRound !== n && S.secret?.n === n) return startWalk(n);
+    S.reveal = !S.reveal; render();
+  },
   share: async () => {
     const url = `${location.origin}${location.pathname}?s=${S.code}`;
     const text = `Únete a mi sala de Impostor fútbol: ${S.code}`;
@@ -511,26 +520,82 @@ function lobbyView() {
   </main>`;
 }
 
+/* ---------- carta estilo FUT y walkout ---------- */
+const POS_FUT = { P: "POR", D: "DFC", M: "MC", F: "DC" };
+const SILUETA = `<svg class="fut-sil" viewBox="0 0 100 100" aria-hidden="true"><ellipse cx="50" cy="38" rx="17" ry="20"/><path d="M12 100c2-24 18-36 38-36s36 12 38 36z"/></svg>`;
+let walkTimers = [];
+
+function startWalk(n) {
+  const p = BY_NAME.get(S.secret?.player);
+  S.walkClub = p ? pick(p.clubs) : "";
+  S.walkedRound = n; S.reveal = true; S.walk = 1;
+  navigator.vibrate?.(20);
+  walkTimers = [1, 2].map((i) => setTimeout(() => { S.walk = i + 1; navigator.vibrate?.(20); render(); }, i * 950));
+  walkTimers.push(setTimeout(endWalk, 3 * 950));
+  render();
+}
+function endWalk() {
+  walkTimers.forEach(clearTimeout); walkTimers = [];
+  if (!S.walk) return;
+  S.walk = 0; S.shine = true; navigator.vibrate?.([30, 40, 60]);
+  render();
+}
+
+function walkout() {
+  const s = S.secret, imp = s.role === "impostor", p = imp ? null : BY_NAME.get(s.player);
+  const step = {
+    1: ["Nación", imp ? "?" : flag(p?.country), imp ? "" : p?.country],
+    2: ["Posición", imp ? "?" : POS_FUT[p?.pos], imp ? "" : POS_LABEL[p?.pos]],
+    3: ["Club", imp ? "?" : esc(S.walkClub), ""],
+  }[S.walk];
+  const len = S.walk === 3 && !imp ? S.walkClub.length : 0;
+  const size = S.walk === 1 && !imp ? "flag" : len > 13 ? "xs" : len > 9 ? "s" : len > 5 ? "m" : "";
+  return `<button class="pack walk" data-a="flip" aria-label="Saltar">
+    <span class="walk-k">${step[0]}</span>
+    <span class="walk-v ${size}">${step[1]}</span>
+    <span class="walk-s">${esc(step[2] || "")}</span>
+    <span class="walk-dots">${[1, 2, 3].map((i) => `<i class="${i <= S.walk ? "on" : ""}"></i>`).join("")}</span>
+  </button>`;
+}
+
+/** Carta FUT. tier: icono para leyendas, oro raro para cracks, oro y plata para el resto. */
+function futCard(name, { tag = "div", foot = "", shine = false } = {}) {
+  const p = BY_NAME.get(name);
+  if (!p) return `<${tag} class="fut gold" ${tag === "button" ? 'data-a="flip"' : ""}><span class="fut-name">${esc(name)}</span>${foot}</${tag}>`;
+  const tier = p.era === "l" ? "icon" : p.lvl === 1 ? "rare" : p.lvl === 2 ? "gold" : "silver";
+  const long = p.name.length > 17 ? " long" : p.name.length > 12 ? " mid" : "";
+  return `<${tag} class="fut ${tier}${shine ? " shine" : ""}" ${tag === "button" ? 'data-a="flip"' : ""}>
+    <span class="fut-top">
+      <span class="fut-side"><b class="fut-pos">${POS_FUT[p.pos]}</b><span class="fut-flag" title="${esc(p.country)}">${flag(p.country)}</span></span>
+      ${SILUETA}
+    </span>
+    <span class="fut-name${long}">${esc(p.name)}</span>
+    <span class="fut-clubs">${p.clubs.map((c) => `<span>${esc(c)}</span>`).join("")}</span>
+    <span class="fut-tier">${{ icon: "Icono", rare: "Oro raro", gold: "Oro", silver: "Plata" }[tier]}</span>
+    ${foot}
+  </${tag}>`;
+}
+
+function impCard(s) {
+  return `<button class="fut imp${S.shine ? " shine" : ""}" data-a="flip">
+    <span class="fut-top">
+      <span class="fut-side"><b class="fut-pos">???</b><span class="fut-flag">?</span></span>
+      ${SILUETA}
+    </span>
+    <span class="fut-name">Impostor</span>
+    <span class="fut-hint">${s.hint ? `Pista: ${esc(s.hint)}` : "Sin pista. Disimula."}${s.k > 1 ? `<br><span>Hay ${s.k} impostores</span>` : ""}</span>
+    <span class="fut-hide">Toca para ocultar</span>
+  </button>`;
+}
+
 function card() {
   const s = S.secret;
-  if (!s || s.n !== S.room.round?.n) return `<div class="card"><p class="muted">Repartiendo…</p></div>`;
-  if (!S.reveal) return `<button class="card closed" data-a="flip"><span class="card-q">?</span><span class="muted">Toca para ver tu carta</span></button>`;
-  if (s.role === "impostor") {
-    return `<button class="card open imp" data-a="flip">
-      <span class="card-k">Eres el</span>
-      <span class="card-name">Impostor</span>
-      <span class="card-sub">${s.hint ? `Pista: ${esc(s.hint)}` : "Sin pista. Disimula."}</span>
-      ${s.k > 1 ? `<span class="card-sub dim">Hay ${s.k} impostores</span>` : ""}
-      <span class="card-hide">Toca para ocultar</span>
-    </button>`;
-  }
-  const p = BY_NAME.get(s.player);
-  return `<button class="card open" data-a="flip">
-    <span class="card-k">Tu futbolista</span>
-    <span class="card-name">${esc(s.player)}</span>
-    ${p ? `<span class="card-sub dim">${POS_LABEL[p.pos]} · ${esc(p.country)}</span><span class="card-clubs">${p.clubs.map(esc).join(" · ")}</span>` : ""}
-    <span class="card-hide">Toca para ocultar</span>
-  </button>`;
+  if (!s || s.n !== S.room.round?.n) return `<div class="pack"><span class="muted">Repartiendo…</span></div>`;
+  if (!S.reveal) return `<button class="pack" data-a="flip"><span class="pack-q">?</span><span class="pack-t">${S.walkedRound === s.n ? "Toca para ver tu carta" : "Toca para abrir tu sobre"}</span></button>`;
+  if (S.walk) return walkout();
+  const shine = S.shine; S.shine = false;
+  if (s.role === "impostor") { S.shine = shine; const h = impCard(s); S.shine = false; return h; }
+  return futCard(s.player, { tag: "button", shine, foot: '<span class="fut-hide">Toca para ocultar</span>' });
 }
 
 const isHostOnline = () => S.room.players?.[S.room.host]?.online !== false;
@@ -568,18 +633,14 @@ function resultView() {
   const imps = arr(res.impostors);
   const impNames = imps.map((id) => roster[id] || "?");
   const iWasImp = imps.includes(S.uid);
-  const p = BY_NAME.get(res.player);
   return `<main class="screen">
     ${roomBar(`Ronda ${r.round?.n ?? ""}`)}
-    <div class="grow"></div>
-    <div class="reveal-box">
-      <span class="card-k">El futbolista era</span>
-      <span class="card-name">${esc(res.player)}</span>
-      ${p ? `<span class="muted small">${p.clubs.map(esc).join(" · ")}</span>` : ""}
-      <span class="card-k">${imps.length > 1 ? "Impostores" : "Impostor"}</span>
+    <p class="lbl center-t">El futbolista era</p>
+    ${futCard(res.player)}
+    <div class="imp-box">
+      <span class="lbl">${imps.length > 1 ? "Impostores" : "Impostor"}</span>
       <span class="imp-name">${impNames.map(esc).join(", ")}${iWasImp ? ' <span class="muted">(tú)</span>' : ""}</span>
     </div>
-    <div class="grow"></div>
     <div class="sticky">
       ${isHost()
         ? `<div class="row"><button class="btn" data-a="lobby" ${S.busy ? "disabled" : ""}>Ajustes</button><button class="btn primary grow1" data-a="start" ${S.busy ? "disabled" : ""}>Otra ronda</button></div>`
