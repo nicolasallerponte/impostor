@@ -627,16 +627,6 @@ export function buildPool(s) {
   return list;
 }
 
-/** Futbolistas parecidos (misma posición y, si se puede, mismo perfil) para la última oportunidad del impostor. */
-export function decoys(p, n = 5) {
-  const score = (q) =>
-    (q.pos === p.pos ? 4 : 0) + (isSud(q) === isSud(p) ? 2 : 0) + (isLiga(q) === isLiga(p) ? 1 : 0) +
-    (q.era === p.era ? 1 : 0) + (Math.abs(q.lvl - p.lvl) <= 1 ? 1 : 0) + Math.random() * 3;
-  return PLAYERS.filter((q) => q.name !== p.name)
-    .map((q) => [score(q), q]).sort((a, b) => b[0] - a[0])
-    .slice(0, n).map(([, q]) => q.name);
-}
-
 /* ---------------- banderas ---------------- */
 const ISO = {
   "España": "ES", "Argentina": "AR", "Brasil": "BR", "Uruguay": "UY", "Colombia": "CO", "Chile": "CL",
